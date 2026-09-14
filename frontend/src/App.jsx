@@ -35,7 +35,7 @@ function Brand() { return <Link className="brand" to="/"><span className="shield
 
 function PasswordField({ label, value, onChange, autoComplete, disabled=false }) {
   const [show, setShow] = useState(false);
-  return <label className="password-field">{label}<span className="password-input-wrap"><input value={value} onChange={onChange} type={show ? 'text' : 'password'} autoComplete={autoComplete} disabled={disabled}/><button type="button" className="password-toggle" aria-label={show ? 'Hide password' : 'Show password'} onClick={() => setShow(v => !v)}>{show ? '🙈' : '👁️'}</button></span></label>;
+  return <label className="password-field">{label}<span className="password-input-wrap"><input value={value} onChange={onChange} type={show ? 'text' : 'password'} autoComplete={autoComplete} disabled={disabled}/><button type="button" className="password-toggle" aria-label={show ? 'Hide password' : 'Show password'} onClick={() => setShow(v => !v)}>{show ? '◉' : '👁'}</button></span></label>;
 }
 
 function PublicHeader() {
