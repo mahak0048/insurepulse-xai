@@ -42,13 +42,68 @@ function PublicHeader() {
   const nav = useNavigate();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
+
   useEffect(() => {
-    const close = (event) => { if (wrapRef.current && !wrapRef.current.contains(event.target)) setOpen(false); };
+    const close = (event) => {
+      if (wrapRef.current && !wrapRef.current.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);
   }, []);
-  const go = (to) => { setOpen(false); nav(to); };
-  return <header className="topbar public"><Brand /><div className="top-actions"><div className="portal-dropdown" ref={wrapRef}><button type="button" className="ghost-btn portal-trigger" onClick={() => setOpen(v => !v)}>👤 Applicant Portal <span className={`portal-chevron ${open ? 'open' : ''}`}>▾</span></button>{open && <div className="portal-menu"><button type="button" onClick={() => go('/app/apply/personal')}>▱ Apply for Policy</button><button type="button" onClick={() => go('/track-status')}>⌕ Track Policy Status</button></div>}</div><button className="ghost-btn" onClick={() => nav('/admin/login')}>⚙ Admin Portal</button></div></header>;
+
+  const go = (to) => {
+    setOpen(false);
+    nav(to);
+  };
+
+  return (
+    <header className="topbar public">
+      <Brand />
+
+      <div className="top-actions">
+        <div className="portal-dropdown" ref={wrapRef}>
+          <button
+            type="button"
+            className="ghost-btn portal-trigger"
+            onClick={() => setOpen(v => !v)}
+          >
+            👤 Applicant Portal
+            <span className={`portal-chevron ${open ? 'open' : ''}`}>
+              ▾
+            </span>
+          </button>
+
+          {open && (
+            <div className="portal-menu">
+              <button
+                type="button"
+                onClick={() => go('/app/apply/personal')}
+              >
+                ▱ Apply for Policy
+              </button>
+
+              <button
+                type="button"
+                onClick={() => go('/track-status')}
+              >
+                ⌕ Track Policy Status
+              </button>
+            </div>
+          )}
+        </div>
+
+        <button
+          className="ghost-btn"
+          onClick={() => nav('/admin/login')}
+        >
+          ⚙ Admin Portal
+        </button>
+      </div>
+    </header>
+  );
 }
 
 function AvatarMenu({ user, admin=false }) {
