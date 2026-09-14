@@ -217,7 +217,7 @@ def init_db() -> tuple[bool, Optional[str]]:
         )
         cur.close(); conn.close()
         conn = get_conn(True)
-        cur = conn.cursor(dictionary=True)
+        cur = conn.cursor()
         for sql in [CREATE_USERS_SQL, CREATE_APPLICATIONS_SQL, CREATE_SETTINGS_SQL, CREATE_AUDIT_SQL, CREATE_DRAFTS_SQL]:
             cur.execute(sql)
         migrations = [
@@ -362,6 +362,9 @@ class ApplicationIn(BaseModel):
 
 class StatusUpdateIn(BaseModel):
     status: str
+    notes: str = ""
+
+class NotesUpdateIn(BaseModel):
     notes: str = ""
 
 class SettingsIn(BaseModel):
@@ -761,6 +764,16 @@ def admin_update_status(app_id: int, payload: StatusUpdateIn, user=Depends(requi
     updated = db_run("SELECT * FROM applications WHERE id=%s", (app_id,), fetchone=True)
     return {"application": serialize_row(updated)}
 
+@app.post("/api/admin/applications/{app_id}/notes")
+def admin_update_notes(app_id: int, payload: NotesUpdateIn, user=Depends(require_role("admin"))):
+    row = db_run("SELECT * FROM applications WHERE id=%s", (app_id,), fetchone=True)
+    if not row:
+        raise HTTPException(status_code=404, detail="Application not found.")
+    db_run("UPDATE applications SET underwriter_notes=%s WHERE id=%s", (payload.notes, app_id))
+    audit(user["sub"], "APPLICATION_NOTES_UPDATED", f"{row['policy_reference']} notes updated.")
+    updated = db_run("SELECT * FROM applications WHERE id=%s", (app_id,), fetchone=True)
+    return {"application": serialize_row(updated)}
+
 @app.get("/api/admin/audit-logs")
 def audit_logs(user=Depends(require_role("admin"))):
     rows = db_run("SELECT * FROM audit_log ORDER BY created_at DESC LIMIT 100", fetch=True)
@@ -804,4 +817,3 @@ def export_csv(user=Depends(require_role("admin"))):
         writer.writeheader()
         for r in rows: writer.writerow({k: serialize(v) for k,v in r.items()})
     return Response(content=output.getvalue(), media_type="text/csv", headers={"Content-Disposition":"attachment; filename=insurepulse_applications_export.csv"})
-
