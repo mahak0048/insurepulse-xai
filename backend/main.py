@@ -217,7 +217,7 @@ def init_db() -> tuple[bool, Optional[str]]:
         )
         cur.close(); conn.close()
         conn = get_conn(True)
-        cur = conn.cursor()
+        cur = conn.cursor(dictionary=True)
         for sql in [CREATE_USERS_SQL, CREATE_APPLICATIONS_SQL, CREATE_SETTINGS_SQL, CREATE_AUDIT_SQL, CREATE_DRAFTS_SQL]:
             cur.execute(sql)
         migrations = [
