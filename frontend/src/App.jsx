@@ -139,6 +139,78 @@ function Field({label, value}) { return <div className="field-display"><strong>{
 function formatINR(n) { return new Intl.NumberFormat('en-IN').format(Number(n||0)); }
 function incomeLabel(v, brackets) { const found=(brackets||[]).find(x=>Number(x.value)===Number(v)); return found?.label || '—'; }
 
+/* ---------- Applicant-facing plain-language rationale (presentation only) ---------- */
+const FRIENDLY_OUTCOME = {
+  APPROVED: 'Good news: your application meets our standard criteria and has been approved.',
+  REJECTED: 'Unfortunately, based on your health and financial profile, we are unable to offer you this policy at this time.',
+  PENDING_ADMIN_REVIEW: 'Your application needs a closer look from our underwriting team. They will review it and update the status here.',
+  MEDICAL_AUDIT_REQUIRED: 'Our underwriting team needs to verify a few medical details before making a decision. We will update the status here once that is done.',
+};
+
+function friendlyMagnitude(points) {
+  if (points < 1) return 'slightly';
+  if (points < 3) return 'moderately';
+  return 'significantly';
+}
+
+function friendlySubject(label) {
+  let m;
+  if ((m = label.match(/^Applicant age \((\d+)\s*years?\)/i))) return `Your age (${m[1]} years)`;
+  if ((m = label.match(/^Body Mass Index \(([\d.]+)\)/i))) return `Your weight in relation to your height (BMI ${m[1]})`;
+  if ((m = label.match(/^Smoking history \((.+)\)/i))) return /current/i.test(m[1]) ? 'Being a current smoker' : 'Being a non-smoker';
+  if ((m = label.match(/^Pre-existing medical conditions \((\d+)\s*reported\)/i))) {
+    const n = Number(m[1]);
+    return n === 0 ? 'Having no pre-existing medical conditions' : `Your pre-existing medical ${n === 1 ? 'condition' : 'conditions'} (${n} reported)`;
+  }
+  if ((m = label.match(/^Family history of major illness \((.+)\)/i))) return /present/i.test(m[1]) ? 'A family history of major illness' : 'No family history of major illness';
+  if ((m = label.match(/^Alcohol consumption \((.+)\)/i))) return m[1].toLowerCase() === 'none' ? 'Not drinking alcohol' : `Your alcohol intake (${m[1].toLowerCase()})`;
+  if ((m = label.match(/^Exercise frequency \((\d+)\s*days?\/week\)/i))) {
+    const n = Number(m[1]);
+    return n === 0 ? 'Not exercising regularly' : `Exercising ${n} ${n === 1 ? 'day' : 'days'} a week`;
+  }
+  return label;
+}
+
+function parseFriendlyFactors(text) {
+  return String(text || '').split('\n').map(line => {
+    const m = line.match(/^\s*[•\-*]\s*(.+?)\s+(increased|decreased)\s+the risk score by\s*~?\s*([\d.]+)\s*points?\.?\s*$/i);
+    if (!m) return null;
+    return { subject: friendlySubject(m[1].trim()), up: m[2].toLowerCase() === 'increased', points: parseFloat(m[3]) };
+  }).filter(Boolean);
+}
+
+function FriendlyRationale({ rationale, status }) {
+  const text = String(rationale || '');
+  const score = (text.match(/risk score:\s*([\d.]+)%/i) || [])[1];
+  const base = (text.match(/baseline:\s*([\d.]+)%/i) || [])[1];
+  const factors = parseFriendlyFactors(text);
+  const outcome = FRIENDLY_OUTCOME[status] || '';
+  return (
+    <div className="rationale friendly">
+      {score && (
+        <p>
+          Our system estimated your overall health risk at <b>{score}%</b>
+          {base ? <>, compared with a typical starting point of about {base}% for applicants</> : null}.
+          A lower score generally means a better chance of approval.
+        </p>
+      )}
+      {factors.length > 0 && (
+        <>
+          <p><strong>What influenced your result the most:</strong></p>
+          <ul className="friendly-list">
+            {factors.map((f, i) => (
+              <li key={i} className={f.up ? 'friendly-up' : 'friendly-down'}>
+                <span className="friendly-arrow" aria-hidden="true">{f.up ? '▲' : '▼'}</span>
+                <span>{f.subject} {f.up ? 'raised' : 'lowered'} your risk {friendlyMagnitude(f.points)}.</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {outcome && <p><b>{outcome}</b></p>}
+    </div>
+  );
+}
 function Landing() {
   const nav=useNavigate(); const [u,setU]=useState(''); const [p,setP]=useState(''); const [err,setErr]=useState(''); const [busy,setBusy]=useState(false);
   async function submit(e){e.preventDefault(); setErr(''); setBusy(true); try { const r=await api('/auth/login',{method:'POST',body:JSON.stringify({username:u,password:p,role:'applicant'})}); setAuth(r); nav('/app/apply/personal'); } catch(ex){setErr(ex.message)} finally{setBusy(false)}}
@@ -172,11 +244,11 @@ function PolicyStep({draft,save}) { const nav=useNavigate(); const p=draft.polic
 
 function ReviewStep({draft,setDraft}) { const nav=useNavigate(); const [busy,setBusy]=useState(false); const submit=async()=>{setBusy(true);try{const r=await api('/applications',{method:'POST',body:JSON.stringify(draft)}); setDraft(emptyDraft); nav(`/app/result?ref=${encodeURIComponent(r.application.policy_reference)}`)}catch(ex){alert(ex.message)}finally{setBusy(false)}}; return <WizardLayout step="review"><Card title="Personal Information" icon="👤"><div className="form-grid three"><Field label="Full Name" value={draft.personal.full_name}/><Field label="Age / Gender" value={`${draft.personal.age} / ${draft.personal.gender}`}/><Field label="Height / Weight" value={`${draft.personal.height_cm} cm / ${draft.personal.weight_kg} kg`}/></div><div className="section-edit"><button className="link-btn" onClick={()=>nav('/app/apply/personal')}>Edit</button></div></Card><Card title="Health & Lifestyle" icon="💙"><div className="form-grid three"><Field label="Smoking History" value={draft.health.smoker}/><Field label="Alcohol Consumption" value={draft.health.alcohol_consumption}/><Field label="Exercise Frequency" value={`${draft.health.exercise_frequency} days/week`}/><Field label="Family History" value={draft.health.family_history}/><Field label="Pre-existing Conditions" value={(draft.health.conditions_final||[]).join(', ')||'None declared'}/></div><div className="section-edit"><button className="link-btn" onClick={()=>nav('/app/apply/health')}>Edit</button></div></Card><Card title="Policy Details" icon="🛡"><div className="form-grid three"><Field label="Policy Type" value={draft.policy.policy_type}/><Field label="Coverage Amount" value={`₹${formatINR(draft.policy.coverage_amount)}`}/><Field label="Annual Income" value={draft.policy.income_label}/></div><div className="section-edit"><button className="link-btn" onClick={()=>nav('/app/apply/policy')}>Edit</button></div></Card><div className="actions between"><button className="secondary-btn" onClick={()=>nav('/app/apply/policy')}>← Back</button><button className="primary-btn" disabled={busy} onClick={submit}>{busy?'Running AI Engine…':'Submit Application →'}</button></div></WizardLayout> }
 
-function ResultPage(){const [search]=useSearchParams(); const ref=search.get('ref'); const [row,setRow]=useState(null); const [err,setErr]=useState(''); const [loading,setLoading]=useState(true); useEffect(()=>{if(!ref)return;api(`/applications/track/${encodeURIComponent(ref)}`).then(r=>setRow(r.application)).catch(e=>setErr(e.message)).finally(()=>setLoading(false))},[ref]); const nav=useNavigate(); if(loading)return <><AppHeader/><main className="page"><div className="loading">Loading application result…</div></main></>; if(err)return <><AppHeader/><main className="page"><div className="error">{err}</div></main></>; const approved=row?.status==='APPROVED'; return <><AppHeader/><main className="page"><h1>Application Submitted</h1><p className="muted">Policy Reference: <b>{row.policy_reference}</b> — please save this for tracking your application later.</p><Card title="AI Underwriting Result" icon="🤖" subtitle="Generated instantly by our XGBoost + SHAP engine"><div className={`metrics ${approved?'three':'two'}`}><div><span>Risk Score</span><strong>{Number(row.risk_score).toFixed(1)}%</strong></div>{approved&&<div><span>Estimated Annual Premium</span><strong>₹{formatINR(row.premium_inr)}</strong></div>}<div><span>Status</span><StatusBadge status={row.status}/></div></div>{!approved&&<div className="info">{row.status==='REJECTED'?'No premium is displayed because this application was not approved for policy issuance.':'Premium will be available only after the application is reviewed and approved by the underwriter.'}</div>}</Card><Card title="How was this calculated?" icon="ℹ"><div className="rationale">{row.shap_rationale}</div></Card><div className="actions split"><button className="secondary-btn" onClick={()=>nav('/app/apply/personal')}>Apply for Another Policy</button><button className="primary-btn" onClick={()=>nav('/app/my-applications')}>View My Applications</button></div></main></> }
+function ResultPage(){const [search]=useSearchParams(); const ref=search.get('ref'); const [row,setRow]=useState(null); const [err,setErr]=useState(''); const [loading,setLoading]=useState(true); useEffect(()=>{if(!ref)return;api(`/applications/track/${encodeURIComponent(ref)}`).then(r=>setRow(r.application)).catch(e=>setErr(e.message)).finally(()=>setLoading(false))},[ref]); const nav=useNavigate(); if(loading)return <><AppHeader/><main className="page"><div className="loading">Loading application result…</div></main></>; if(err)return <><AppHeader/><main className="page"><div className="error">{err}</div></main></>; const approved=row?.status==='APPROVED'; return <><AppHeader/><main className="page"><h1>Application Submitted</h1><p className="muted">Policy Reference: <b>{row.policy_reference}</b> — please save this for tracking your application later.</p><Card title="AI Underwriting Result" icon="🤖" subtitle="Generated instantly by our AI underwriting system"><div className={`metrics ${approved?'three':'two'}`}><div><span>Risk Score</span><strong>{Number(row.risk_score).toFixed(1)}%</strong></div>{approved&&<div><span>Estimated Annual Premium</span><strong>₹{formatINR(row.premium_inr)}</strong></div>}<div><span>Status</span><StatusBadge status={row.status}/></div></div>{!approved&&<div className="info">{row.status==='REJECTED'?'No premium is displayed because this application was not approved for policy issuance.':'Premium will be available only after the application is reviewed and approved by the underwriter.'}</div>}</Card><Card title="How was this calculated?" icon="ℹ"><FriendlyRationale rationale={row.shap_rationale} status={row.status}/></Card><div className="actions split"><button className="secondary-btn" onClick={()=>nav('/app/apply/personal')}>Apply for Another Policy</button><button className="primary-btn" onClick={()=>nav('/app/my-applications')}>View My Applications</button></div></main></> }
 
 function MyApplications(){const [rows,setRows]=useState([]); const [loading,setLoading]=useState(true); useEffect(()=>{api('/applications/mine').then(r=>setRows(r.applications)).finally(()=>setLoading(false))},[]); return <><AppHeader/><main className="page"><h1>My Applications</h1><p className="muted">Your policy application history.</p>{loading?<div className="loading">Loading…</div>:<div className="table-card"><table><thead><tr><th>Policy Reference</th><th>Policy Type</th><th>Submission Date</th><th>Risk Score</th><th>Premium</th><th>Status</th></tr></thead><tbody>{rows.map(r=><tr key={r.id}><td>{r.policy_reference}</td><td>{r.policy_type}</td><td>{r.created_at}</td><td>{Number(r.risk_score).toFixed(1)}%</td><td>{r.premium_inr==null?'—':`₹${formatINR(r.premium_inr)}`}</td><td><StatusBadge status={r.status}/></td></tr>)}</tbody></table></div>}</main></> }
 
-function TrackStatus(){const [ref,setRef]=useState('');const [row,setRow]=useState(null);const [err,setErr]=useState(''); const check=async()=>{setErr('');setRow(null);try{const r=await api(`/applications/track/${encodeURIComponent(ref.trim())}`);setRow(r.application)}catch(e){setErr(e.message)}}; return <><PublicHeader/><main className="page narrow"><h1>Track Policy Status</h1><p className="muted">Enter your Policy Reference Number to view its current status — no login required.</p><Card title="Policy Reference"><div className="actions-row"><input placeholder="e.g. POL-202609-AB12CD" value={ref} onChange={e=>setRef(e.target.value)}/><button className="primary-btn" onClick={check}>Check Status</button></div>{err&&<div className="error">{err}</div>}</Card>{row&&<Card title={`Policy ${row.policy_reference}`} subtitle={row.policy_type}><div className="track-grid"><div><Field label="Applicant" value={row.full_name}/><Field label="Status" value={<StatusBadge status={row.status}/>}/><Field label="Risk Score" value={`${Number(row.risk_score).toFixed(1)}%`}/>{row.premium_inr!=null&&<Field label="Annual Premium" value={`₹${formatINR(row.premium_inr)}`}/>}</div><div><strong>SHAP AI Explanation</strong><div className="rationale">{row.shap_rationale}</div>{row.underwriter_notes&&row.underwriter_notes!==row.shap_rationale&&<div className="info">{row.underwriter_notes}</div>}</div></div></Card>}</main></> }
+function TrackStatus(){const [ref,setRef]=useState('');const [row,setRow]=useState(null);const [err,setErr]=useState(''); const check=async()=>{setErr('');setRow(null);try{const r=await api(`/applications/track/${encodeURIComponent(ref.trim())}`);setRow(r.application)}catch(e){setErr(e.message)}}; return <><PublicHeader/><main className="page narrow"><h1>Track Policy Status</h1><p className="muted">Enter your Policy Reference Number to view its current status — no login required.</p><Card title="Policy Reference"><div className="actions-row"><input placeholder="e.g. POL-202609-AB12CD" value={ref} onChange={e=>setRef(e.target.value)}/><button className="primary-btn" onClick={check}>Check Status</button></div>{err&&<div className="error">{err}</div>}</Card>{row&&<Card title={`Policy ${row.policy_reference}`} subtitle={row.policy_type}><div className="track-grid"><div><Field label="Applicant" value={row.full_name}/><Field label="Status" value={<StatusBadge status={row.status}/>}/><Field label="Risk Score" value={`${Number(row.risk_score).toFixed(1)}%`}/>{row.premium_inr!=null&&<Field label="Annual Premium" value={`₹${formatINR(row.premium_inr)}`}/>}</div><div><strong>Why you received this result</strong><FriendlyRationale rationale={row.shap_rationale} status={row.status}/>{row.underwriter_notes&&row.underwriter_notes!==row.shap_rationale&&<div className="info">{row.underwriter_notes}</div>}</div></div></Card>}</main></> }
 
 function AdminLogin(){const nav=useNavigate(); const [u,setU]=useState('');const [p,setP]=useState('');const[err,setErr]=useState('');const submit=async()=>{try{const r=await api('/auth/login',{method:'POST',body:JSON.stringify({username:u,password:p,role:'admin'})});setAuth(r);nav('/admin/dashboard')}catch(e){setErr(e.message)}};return <><PublicHeader/><main className="page-center"><Card title="Admin Login" subtitle="Sign in to access the underwriting dashboard."><div className="stack"><label>Username<input value={u} onChange={e=>setU(e.target.value)}/></label><PasswordField label="Password" value={p} onChange={e=>setP(e.target.value)} autoComplete="current-password"/>{err&&<div className="error">{err}</div>}<button className="primary-btn" onClick={submit}>Login →</button><button className="secondary-btn" onClick={()=>nav('/')}>← Back to Home</button></div></Card></main></> }
 
